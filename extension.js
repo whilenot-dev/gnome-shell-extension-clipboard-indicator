@@ -181,7 +181,8 @@ const ClipboardIndicator = GObject.registerClass({
             this._buttonText.set_text("...");
         } else {
             if (entry.isText()) {
-                this._buttonText.set_text(this._truncate(entry.getStringValue(), TOPBAR_PREVIEW_SIZE));
+                const text = _truncate(entry.getStringValue(), TOPBAR_PREVIEW_SIZE);
+                this._buttonText.set_text(text);
                 this._buttonImgPreview.destroy_all_children();
             }
             else if (entry.isImage()) {
@@ -542,20 +543,11 @@ const ClipboardIndicator = GObject.registerClass({
         }
     }
 
-    _truncate (string, length) {
-        let shortened = string.replace(/\s+/g, ' ');
-
-        let chars = [...shortened]
-        if (chars.length > length)
-            shortened = chars.slice(0, length - 1).join('') + '...';
-
-        return shortened;
-    }
-
     _setEntryLabel (menuItem) {
         const { entry } = menuItem;
         if (entry.isText()) {
-            menuItem.label.set_text(this._truncate(entry.getStringValue(), PREVIEW_SIZE));
+            const text = _truncate(entry.getStringValue(), PREVIEW_SIZE);
+            menuItem.label.set_text(text);
         }
         else if (entry.isImage()) {
             this.registry.getEntryAsImage(entry).then(img => {
@@ -1959,3 +1951,22 @@ const ClipboardIndicator = GObject.registerClass({
         return null;
     }
 });
+
+/**
+ * Truncate a string to a specific length
+ *
+ * @param {string} value
+ * @param {number} length
+ * @returns string
+ */
+function _truncate(value, length) {
+    let result = value.replace(/\s+/g, ' ');
+
+    if (result.length <= length) {
+        return result;
+    }
+
+    result = result.slice(0, length - 1) + '...';
+
+    return result;
+}
