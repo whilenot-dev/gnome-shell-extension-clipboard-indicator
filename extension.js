@@ -22,8 +22,8 @@ const CLIPBOARD_TYPE = St.ClipboardType.CLIPBOARD;
 const INDICATOR_ICON = 'edit-paste-symbolic';
 
 let DELAYED_SELECTION_TIMEOUT = 750;
-let MAX_REGISTRY_LENGTH       = 15;
-let MAX_ENTRY_LENGTH          = 50;
+let HISTORY_SIZE              = 15;
+let PREVIEW_SIZE              = 30;
 let CACHE_ONLY_FAVORITE       = false;
 let DELETE_ENABLED            = true;
 let MOVE_ITEM_FIRST           = false;
@@ -34,7 +34,7 @@ let NOTIFY_ON_CYCLE           = true;
 let NOTIFY_ON_CLEAR           = true;
 let CONFIRM_ON_CLEAR          = true;
 let CONFIRM_ON_PINNED_DELETE  = false;
-let MAX_TOPBAR_LENGTH         = 15;
+let TOPBAR_PREVIEW_SIZE       = 10;
 let TOPBAR_DISPLAY_MODE       = 1; //0 - only icon, 1 - only clipboard content, 2 - both, 3 - neither
 let CLEAR_ON_BOOT             = false;
 let PASTE_ON_SELECT           = false;
@@ -181,7 +181,7 @@ const ClipboardIndicator = GObject.registerClass({
             this._buttonText.set_text("...");
         } else {
             if (entry.isText()) {
-                this._buttonText.set_text(this._truncate(entry.getStringValue(), MAX_TOPBAR_LENGTH));
+                this._buttonText.set_text(this._truncate(entry.getStringValue(), TOPBAR_PREVIEW_SIZE));
                 this._buttonImgPreview.destroy_all_children();
             }
             else if (entry.isImage()) {
@@ -555,7 +555,7 @@ const ClipboardIndicator = GObject.registerClass({
     _setEntryLabel (menuItem) {
         const { entry } = menuItem;
         if (entry.isText()) {
-            menuItem.label.set_text(this._truncate(entry.getStringValue(), MAX_ENTRY_LENGTH));
+            menuItem.label.set_text(this._truncate(entry.getStringValue(), PREVIEW_SIZE));
         }
         else if (entry.isImage()) {
             this.registry.getEntryAsImage(entry).then(img => {
@@ -911,7 +911,7 @@ const ClipboardIndicator = GObject.registerClass({
 
         const origSize = clipItemsRadioGroupNoFavorite.length;
 
-        while (clipItemsRadioGroupNoFavorite.length > MAX_REGISTRY_LENGTH) {
+        while (clipItemsRadioGroupNoFavorite.length > HISTORY_SIZE) {
             let oldestNoFavorite = clipItemsRadioGroupNoFavorite.shift();
             this._removeEntry(oldestNoFavorite);
 
@@ -1373,8 +1373,8 @@ const ClipboardIndicator = GObject.registerClass({
 
     _fetchSettings () {
         const { settings } = this.extension;
-        MAX_REGISTRY_LENGTH         = settings.get_int(PrefsFields.HISTORY_SIZE);
-        MAX_ENTRY_LENGTH            = settings.get_int(PrefsFields.PREVIEW_SIZE);
+        HISTORY_SIZE                = settings.get_int(PrefsFields.HISTORY_SIZE);
+        PREVIEW_SIZE                = settings.get_int(PrefsFields.PREVIEW_SIZE);
         CACHE_ONLY_FAVORITE         = settings.get_boolean(PrefsFields.CACHE_ONLY_FAVORITE);
         DELETE_ENABLED              = settings.get_boolean(PrefsFields.DELETE);
         MOVE_ITEM_FIRST             = settings.get_boolean(PrefsFields.MOVE_ITEM_FIRST);
@@ -1384,7 +1384,7 @@ const ClipboardIndicator = GObject.registerClass({
         CONFIRM_ON_CLEAR            = settings.get_boolean(PrefsFields.CONFIRM_ON_CLEAR);
         CONFIRM_ON_PINNED_DELETE    = settings.get_boolean(PrefsFields.CONFIRM_ON_PINNED_DELETE);
         ENABLE_KEYBINDING           = settings.get_boolean(PrefsFields.ENABLE_KEYBINDING);
-        MAX_TOPBAR_LENGTH           = settings.get_int(PrefsFields.TOPBAR_PREVIEW_SIZE);
+        TOPBAR_PREVIEW_SIZE         = settings.get_int(PrefsFields.TOPBAR_PREVIEW_SIZE);
         TOPBAR_DISPLAY_MODE         = settings.get_int(PrefsFields.TOPBAR_DISPLAY_MODE_ID);
         CLEAR_ON_BOOT               = settings.get_boolean(PrefsFields.CLEAR_ON_BOOT);
         PASTE_ON_SELECT             = settings.get_boolean(PrefsFields.PASTE_ON_SELECT);
