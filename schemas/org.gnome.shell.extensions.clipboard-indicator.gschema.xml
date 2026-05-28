@@ -85,7 +85,7 @@
 
     <key type="i" name="preview-size">
         <default>30</default>
-        <summary>Amount of visible characters for clipboard items </summary>
+        <summary>Amount of visible characters for clipboard items</summary>
         <description>
             The number of characters to display for every clipboard item in
             the history menu
@@ -95,7 +95,7 @@
 
     <key type="i" name="topbar-preview-size">
         <default>10</default>
-        <summary>Amount of visible characters in topbar </summary>
+        <summary>Amount of visible characters in topbar</summary>
         <description>
             The number of characters to display for current clipboard item in the topbar
         </description>
