@@ -19,7 +19,6 @@ import { PrefsFields } from './constants.js';
 import { Keyboard } from './keyboard.js';
 
 const CLIPBOARD_TYPE = St.ClipboardType.CLIPBOARD;
-
 const INDICATOR_ICON = 'edit-paste-symbolic';
 
 let DELAYED_SELECTION_TIMEOUT = 750;
@@ -522,7 +521,7 @@ const ClipboardIndicator = GObject.registerClass({
             });
         }
         else {
-        this._getAllIMenuItems().forEach((mItem) => {
+            this._getAllIMenuItems().forEach((mItem) => {
                 let text = mItem.clipContents;
                 let tag = mItem.entry.getTag() || '';
                 if (!CASE_SENSITIVE_SEARCH) {
@@ -588,8 +587,8 @@ const ClipboardIndicator = GObject.registerClass({
 
         // when focus is at the last element of the displayed list
         let beforeMenuItem = this.clipItemsRadioGroup[currentIndex + 1];
-        if(beforeMenuItem.actor.visible){
-          return beforeMenuItem;
+        if (beforeMenuItem.actor.visible){
+            return beforeMenuItem;
         }
 
         return null;
@@ -859,8 +858,7 @@ const ClipboardIndicator = GObject.registerClass({
 
         this.dialogManager.open(title, message, sub_message, _("Clear"), _("Cancel"), () => {
             this._clearHistory();
-        }
-      );
+        });
     }
 
     _clearHistory (invokedAutomatically = false) {
@@ -1133,7 +1131,7 @@ const ClipboardIndicator = GObject.registerClass({
                 clearInterval(this._timerIntervalId);
                 this._timerIntervalId = null;
             }
-            
+
             const timeoutMs = (NEXT_HISTORY_CLEAR - currentTime) * 1000;
             this._historyClearTimeoutId = setTimeout(() => {
                 this._clearHistory(true);
@@ -1621,9 +1619,6 @@ const ClipboardIndicator = GObject.registerClass({
         }
         this.menu.toggle();
     }
-
-
-
 
     #pasteItem (menuItem) {
         this.menu.close();
