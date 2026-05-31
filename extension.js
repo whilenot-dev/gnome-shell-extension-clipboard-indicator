@@ -1952,6 +1952,12 @@ const ClipboardIndicator = GObject.registerClass({
             await this.registry.writeEntryFile(result);
         }
 
+        if (result && result.isText() && STRIP_TEXT) {
+            const input = result.getStringValue().trim();
+            const bytes = new TextEncoder().encode(input);
+            result = new ClipboardEntry(result.mimetype(), bytes, result.isFavorite());
+        }
+
         return result;
     }
 });
