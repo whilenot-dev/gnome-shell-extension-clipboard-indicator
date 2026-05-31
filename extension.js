@@ -223,8 +223,6 @@ const ClipboardIndicator = GObject.registerClass({
         if (this._destroyed) {
             return;
         }
-        let lastIdx = clipHistory.length - 1;
-        let clipItemsArr = this.clipItemsRadioGroup;
 
         /* This create the search entry, which is add to a menuItem.
         The searchEntry is connected to the function for research.
@@ -400,10 +398,12 @@ const ClipboardIndicator = GObject.registerClass({
         }));
 
         // Add cached items
-        clipHistory.forEach(entry => this._addEntry(entry));
+        const entries = clipHistory.filter(_isEntryValid);
+        entries.forEach(entry => this._addEntry(entry));
 
+        const lastIdx = entries.length - 1;
         if (lastIdx >= 0) {
-            this._selectMenuItem(clipItemsArr[lastIdx]);
+            this._selectMenuItem(this.clipItemsRadioGroup[lastIdx]);
         }
 
         this.#showElements();
@@ -1005,33 +1005,31 @@ const ClipboardIndicator = GObject.registerClass({
 
         try {
             const result = await this.#getClipboardContent();
-            if (this._destroyed) {
+            if (this._destroyed || !result) {
                 return;
             }
 
-            if (result) {
-                for (let menuItem of this.clipItemsRadioGroup) {
-                    if (menuItem.entry.equals(result)) {
-                        this._selectMenuItem(menuItem, false);
+            for (let menuItem of this.clipItemsRadioGroup) {
+                if (menuItem.entry.equals(result)) {
+                    this._selectMenuItem(menuItem, false);
 
-                        if (!menuItem.entry.isFavorite() && MOVE_ITEM_FIRST) {
-                            this._moveItemFirst(menuItem);
-                        }
-
-                        return;
+                    if (!menuItem.entry.isFavorite() && MOVE_ITEM_FIRST) {
+                        this._moveItemFirst(menuItem);
                     }
-                }
 
-                this.#addToCache(result);
-                this._addEntry(result, true, false);
-                this._removeOldestEntries();
-                if (NOTIFY_ON_COPY) {
-                    this._showNotification(_("Copied to clipboard"), notif => {
-                        notif.addAction(_('Cancel'), this._cancelNotification);
-                    });
+                    return;
                 }
-                this._blinkIcon();
             }
+
+            this.#addToCache(result);
+            this._addEntry(result, true, false);
+            this._removeOldestEntries();
+            if (NOTIFY_ON_COPY) {
+                this._showNotification(_("Copied to clipboard"), notif => {
+                    notif.addAction(_('Cancel'), this._cancelNotification);
+                });
+            }
+            this._blinkIcon();
         }
         catch (e) {
             console.error('Clipboard Indicator: Failed to refresh indicator');
@@ -1904,6 +1902,8 @@ const ClipboardIndicator = GObject.registerClass({
     }
 
     async #getClipboardContent () {
+        let result = null;
+
         const mimetypes = [
             "text/plain;charset=utf-8",
             "UTF8_STRING",
@@ -1917,40 +1917,60 @@ const ClipboardIndicator = GObject.registerClass({
             'image/svg+xml',
             'text/html',
         ];
+        for (const mimetype of mimetypes) {
+            result = await new Promise(resolve => {
+                this.extension.clipboard.get_content(
+                    CLIPBOARD_TYPE,
+                    mimetype,
+                    (clipBoard, bytes) => {
+                        if (bytes === null || bytes.get_size() === 0) {
+                            resolve(null);
+                            return;
+                        }
 
-        for (let type of mimetypes) {
-            let result = await new Promise(resolve => this.extension.clipboard.get_content(CLIPBOARD_TYPE, type, (clipBoard, bytes) => {
-                if (bytes === null || bytes.get_size() === 0) {
-                    resolve(null);
-                    return;
-                }
+                        // HACK: workaround for GNOME 2nd+ copy mangling mimetypes https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/8233
+                        // In theory GNOME or XWayland should auto-convert this back to UTF8_STRING for legacy apps when it's needed https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/5300
+                        let type = mimetype;
+                        if (type === "UTF8_STRING") {
+                            type = "text/plain;charset=utf-8";
+                        }
 
-                // HACK: workaround for GNOME 2nd+ copy mangling mimetypes https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/8233
-                // In theory GNOME or XWayland should auto-convert this back to UTF8_STRING for legacy apps when it's needed https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/5300
-                if (type === "UTF8_STRING") {
-                    type = "text/plain;charset=utf-8";
-                }
-
-                const entry = new ClipboardEntry(type, bytes.get_data(), false);
-                if (CACHE_IMAGES && entry.isImage()) {
-                    this.registry.writeEntryFile(entry);
-                }
-                resolve(entry);
-            }));
-
+                        let entry = new ClipboardEntry(type, bytes.get_data(), false);
+                        if (!_isEntryValid(entry)) {
+                            entry = null;
+                        }
+                        resolve(entry);
+                    },
+                );
+            });
             if (result) {
-                if (!CACHE_IMAGES && result.isImage()) {
-                    return null;
-                }
-                else {
-                    return result;
-                }
+                break;
             }
         }
 
-        return null;
+        if (result && result.isImage()) {
+            await this.registry.writeEntryFile(result);
+        }
+
+        return result;
     }
 });
+
+/**
+ * Check if a clipboard entry in valid
+ *
+ * @param {ClipboardEntry} entry
+ * @returns boolean
+ */
+function _isEntryValid(entry) {
+    if (entry.isImage()) {
+        if (!CACHE_IMAGES) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 /**
  * Truncate a string to a specific length
