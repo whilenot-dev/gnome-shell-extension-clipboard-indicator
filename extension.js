@@ -1922,44 +1922,68 @@ const ClipboardIndicator = GObject.registerClass({
             'text/html',
         ];
         for (const mimetype of mimetypes) {
-            result = await new Promise(resolve => {
-                this.extension.clipboard.get_content(
-                    CLIPBOARD_TYPE,
-                    mimetype,
-                    (clipBoard, bytes) => {
-                        if (this._destroyed || bytes === null || bytes.get_size() === 0) {
-                            resolve(null);
-                            return;
-                        }
-
-                        // HACK: workaround for GNOME 2nd+ copy mangling mimetypes https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/8233
-                        // In theory GNOME or XWayland should auto-convert this back to UTF8_STRING for legacy apps when it's needed https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/5300
-                        let type = mimetype;
-                        if (type === "UTF8_STRING") {
-                            type = "text/plain;charset=utf-8";
-                        }
-
-                        let entry = new ClipboardEntry(type, bytes.get_data(), false);
-                        if (!_isEntryValid(entry)) {
-                            entry = null;
-                        }
-                        resolve(entry);
-                    },
-                );
-            });
-            if (this._destroyed || result) {
+            try {
+                result = await this.#getClipboardContentFromMimetype(mimetype);
                 break;
+            } catch (e) {
+                if (this._destroyed) return null;
             }
         }
-
-        if (result && result.isImage()) {
-            await this.registry.writeEntryFile(result);
+        if (this._destroyed || !result || !_isEntryValid(result)) {
+            return null;
         }
 
-        if (result && result.isText() && STRIP_TEXT) {
-            const input = result.getStringValue().trim();
-            const bytes = new TextEncoder().encode(input);
-            result = new ClipboardEntry(result.mimetype(), bytes, result.isFavorite());
+        result = await this.#processClipboardEntry(result);
+
+        return result;
+    }
+
+    /**
+     * Check the clipboard content for a specific mimetype
+     *
+     * @param {string} mimetype
+     * @returns {Promise<ClipboardEntry>}
+     */
+    #getClipboardContentFromMimetype (mimetype) {
+        return new Promise((resolve, reject) => {
+            this.extension.clipboard.get_content(
+                CLIPBOARD_TYPE,
+                mimetype,
+                (clipBoard, bytes) => {
+                    if (bytes === null || bytes.get_size() === 0) {
+                        reject(new Error('Content is empty'));
+                        return;
+                    }
+
+                    // HACK: workaround for GNOME 2nd+ copy mangling mimetypes https://gitlab.gnome.org/GNOME/gnome-shell/-/issues/8233
+                    // In theory GNOME or XWayland should auto-convert this back to UTF8_STRING for legacy apps when it's needed https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/5300
+                    const type = mimetype === "UTF8_STRING" ? "text/plain;charset=utf-8" : mimetype;
+                    const entry = new ClipboardEntry(type, bytes.get_data(), false);
+                    resolve(entry);
+                },
+            );
+        });
+    }
+
+    /**
+     * Process a valid clipboard entry
+     *
+     * @param {ClipboardEntry} entry
+     * @returns ClipboardEntry
+     */
+    async #processClipboardEntry (entry) {
+        let result = entry;
+
+        if (entry.isImage()) {
+            await this.registry.writeEntryFile(entry);
+        }
+
+        if (entry.isText()) {
+            if (STRIP_TEXT) {
+                const input = entry.getStringValue().trim();
+                const bytes = new TextEncoder().encode(input);
+                result = new ClipboardEntry(entry.mimetype(), bytes, entry.isFavorite());
+            }
         }
 
         return result;
