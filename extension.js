@@ -1338,7 +1338,7 @@ const ClipboardIndicator = GObject.registerClass({
             }
 
             this.#getClipboardContent().then(entry => {
-                if (!entry) return;
+                if (this._destroyed || !entry) return;
                 this.#updateIndicatorContent(entry);
             }).catch(e => console.error(e));
 
@@ -1430,7 +1430,9 @@ const ClipboardIndicator = GObject.registerClass({
 
             //update topbar
             this._updateTopbarLayout();
-            this.#updateIndicatorContent(await this.#getClipboardContent());
+            const entry = await this.#getClipboardContent();
+            if (this._destroyed) return;
+            this.#updateIndicatorContent(entry);
 
             // Bind or unbind shortcuts
             if (ENABLE_KEYBINDING)
@@ -1923,7 +1925,7 @@ const ClipboardIndicator = GObject.registerClass({
                     CLIPBOARD_TYPE,
                     mimetype,
                     (clipBoard, bytes) => {
-                        if (bytes === null || bytes.get_size() === 0) {
+                        if (this._destroyed || bytes === null || bytes.get_size() === 0) {
                             resolve(null);
                             return;
                         }
@@ -1943,7 +1945,7 @@ const ClipboardIndicator = GObject.registerClass({
                     },
                 );
             });
-            if (result) {
+            if (this._destroyed || result) {
                 break;
             }
         }
