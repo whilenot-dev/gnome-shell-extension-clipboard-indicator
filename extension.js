@@ -220,7 +220,7 @@ const ClipboardIndicator = GObject.registerClass({
     }
 
     async _buildMenu () {
-        const clipHistory = await this._getCache();
+        const clipHistory = await this.registry.read();
         if (this._destroyed) {
             return;
         }
@@ -965,10 +965,6 @@ const ClipboardIndicator = GObject.registerClass({
         }
 
         menuItem.menu.close();
-    }
-
-    _getCache () {
-        return this.registry.read();
     }
 
     #addToCache (entry) {
