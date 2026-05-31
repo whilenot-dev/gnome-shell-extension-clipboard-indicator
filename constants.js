@@ -1,6 +1,7 @@
 export const PrefsFields = {
     HISTORY_SIZE                    : 'history-size',
     PREVIEW_SIZE                    : 'preview-size',
+    MIN_TEXT_LENGTH                 : 'min-text-length',
     CACHE_FILE_SIZE                 : 'cache-size',
     CACHE_ONLY_FAVORITE             : 'cache-only-favorites',
     DELETE                          : 'enable-deletion',

@@ -24,6 +24,7 @@ const INDICATOR_ICON = 'edit-paste-symbolic';
 let DELAYED_SELECTION_TIMEOUT = 750;
 let HISTORY_SIZE              = 15;
 let PREVIEW_SIZE              = 30;
+let MIN_TEXT_LENGTH           = 1;
 let CACHE_ONLY_FAVORITE       = false;
 let DELETE_ENABLED            = true;
 let MOVE_ITEM_FIRST           = false;
@@ -1365,6 +1366,7 @@ const ClipboardIndicator = GObject.registerClass({
         const { settings } = this.extension;
         HISTORY_SIZE                = settings.get_int(PrefsFields.HISTORY_SIZE);
         PREVIEW_SIZE                = settings.get_int(PrefsFields.PREVIEW_SIZE);
+        MIN_TEXT_LENGTH             = settings.get_int(PrefsFields.MIN_TEXT_LENGTH);
         CACHE_ONLY_FAVORITE         = settings.get_boolean(PrefsFields.CACHE_ONLY_FAVORITE);
         DELETE_ENABLED              = settings.get_boolean(PrefsFields.DELETE);
         MOVE_ITEM_FIRST             = settings.get_boolean(PrefsFields.MOVE_ITEM_FIRST);
@@ -1973,6 +1975,16 @@ const ClipboardIndicator = GObject.registerClass({
 function _isEntryValid(entry) {
     if (entry.isImage()) {
         if (!CACHE_IMAGES) {
+            return false;
+        }
+    }
+
+    if (entry.isText()) {
+        let text = entry.getStringValue();
+        if (STRIP_TEXT) {
+            text = text.trim();
+        }
+        if (text.length < MIN_TEXT_LENGTH) {
             return false;
         }
     }

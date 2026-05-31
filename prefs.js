@@ -56,6 +56,16 @@ class Settings {
             })
         });
 
+        this.field_min_text_length = new Adw.SpinRow({
+            title: _("Text Item Minimum Length (characters)"),
+            subtitle: _("Minimum number of characters required for new text entries"),
+            adjustment: new Gtk.Adjustment({
+                lower: 1,
+                upper: 100,
+                step_increment: 1
+            })
+        });
+
         this.field_cache_size = new Adw.SpinRow({
             title: _("Max cache file size (MB)"),
             subtitle: _("Maximum disk space used for caching clipboard data"),
@@ -278,6 +288,7 @@ class Settings {
         this.ui.add(this.field_show_clear_history_button);
 
         this.behavior.add(this.field_strip_text);
+        this.behavior.add(this.field_min_text_length);
         this.behavior.add(this.field_move_item_first);
         this.behavior.add(this.field_keep_selected_on_clear);
         this.behavior.add(this.field_open_at_cursor);
@@ -317,6 +328,7 @@ class Settings {
 
         this.schema.bind(PrefsFields.HISTORY_SIZE, this.field_size, 'value', Gio.SettingsBindFlags.DEFAULT);
         this.schema.bind(PrefsFields.PREVIEW_SIZE, this.field_preview_size, 'value', Gio.SettingsBindFlags.DEFAULT);
+        this.schema.bind(PrefsFields.MIN_TEXT_LENGTH, this.field_min_text_length, 'value', Gio.SettingsBindFlags.DEFAULT);
         this.schema.bind(PrefsFields.CACHE_FILE_SIZE, this.field_cache_size, 'value', Gio.SettingsBindFlags.DEFAULT);
         this.schema.bind(PrefsFields.CACHE_ONLY_FAVORITE, this.field_cache_disable, 'active', Gio.SettingsBindFlags.DEFAULT);
         this.schema.bind(PrefsFields.NOTIFY_ON_COPY, this.field_copy_notification_toggle, 'active', Gio.SettingsBindFlags.DEFAULT);
