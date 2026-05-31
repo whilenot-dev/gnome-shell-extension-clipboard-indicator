@@ -102,6 +102,16 @@
         <range min="1" max="100"/>
     </key>
 
+    <key type="i" name="min-text-length">
+        <default>1</default>
+        <summary>Minimum number of characters for text items</summary>
+        <description>
+            A clipboard item text must contain at least this number of characters to be
+            recognized as valid item
+        </description>
+        <range min="1" max="100"/>
+    </key>
+
     <key type="i" name="cache-size">
         <default>5</default>
         <summary>The allowed size for the registry cache file in MB</summary>
