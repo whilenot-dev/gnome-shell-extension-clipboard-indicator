@@ -1980,9 +1980,7 @@ const ClipboardIndicator = GObject.registerClass({
 
         if (entry.isText()) {
             if (STRIP_TEXT) {
-                const input = entry.getStringValue().trim();
-                const bytes = new TextEncoder().encode(input);
-                result = new ClipboardEntry(entry.mimetype(), bytes, entry.isFavorite());
+                result = entry.toTrimmed();
             }
         }
 

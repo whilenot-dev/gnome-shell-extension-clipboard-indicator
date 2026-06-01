@@ -406,4 +406,16 @@ export class ClipboardEntry {
             ...(tag ? { tag } : {}),
         }
     }
+
+    /**
+     * Convert to a trimmed variant
+     *
+     * @returns {ClipboardEntry}
+     */
+    toTrimmed () {
+        const input = this.getStringValue().trim();
+        const bytes = new TextEncoder().encode(input);
+
+        return new ClipboardEntry(this.#mimetype, bytes, this.#favorite);
+    }
 }
