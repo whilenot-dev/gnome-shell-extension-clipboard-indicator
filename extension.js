@@ -1975,7 +1975,7 @@ const ClipboardIndicator = GObject.registerClass({
         let result = entry;
 
         if (entry.isImage()) {
-            await this.registry.writeEntryFile(entry);
+            await this.registry.writeImageToFile(entry);
         }
 
         if (entry.isText()) {

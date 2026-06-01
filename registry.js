@@ -1,200 +1,206 @@
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import St from 'gi://St';
-import { PrefsFields } from './constants.js';
 
-const FileQueryInfoFlags = Gio.FileQueryInfoFlags;
-const FileCopyFlags = Gio.FileCopyFlags;
-const FileTest = GLib.FileTest;
+import { PrefsFields } from './constants.js';
 
 export class Registry {
     constructor ({ settings, uuid }) {
-        this.uuid = uuid;
         this.settings = settings;
-        this.REGISTRY_FILE = 'registry.txt';
-        this.REGISTRY_DIR = GLib.get_user_cache_dir() + '/' + this.uuid;
-        this.REGISTRY_PATH = this.REGISTRY_DIR + '/' + this.REGISTRY_FILE;
-        this.BACKUP_REGISTRY_PATH = this.REGISTRY_PATH + '~';
+
+        this.REGISTRY_DIRPATH = GLib.get_user_cache_dir() + '/' + uuid;
+        this.REGISTRY_FILEPATH = this.REGISTRY_DIRPATH + '/' + 'registry.txt';
+        this.REGISTRY_FILEPATH_BACKUP = this.REGISTRY_FILEPATH + '~';
     }
 
-    write (entries) {
-        const registryContent = [];
-
-        for (let entry of entries) {
-            const item = {
-                favorite: entry.isFavorite(),
-                mimetype: entry.mimetype()
-            };
-
-            registryContent.push(item);
-
-            if (entry.isText()) {
-                item.contents = entry.getStringValue();
-            }
-            else if (entry.isImage()) {
-                const filename = this.getEntryFilename(entry);
-                item.contents = filename;
-                this.writeEntryFile(entry);
-            }
-
-            if (entry.getTag()) item.tag = entry.getTag();
-        }
-
-        this.writeToFile(registryContent);
-    }
-
-    writeToFile (registry) {
-        let json = JSON.stringify(registry);
-        let contents = new GLib.Bytes(json);
-
-        // Make sure dir exists
-        GLib.mkdir_with_parents(this.REGISTRY_DIR, parseInt('0775', 8));
-
-        // Write contents to file asynchronously
-        let file = Gio.file_new_for_path(this.REGISTRY_PATH);
-        file.replace_async(null, false, Gio.FileCreateFlags.NONE,
-                            GLib.PRIORITY_DEFAULT, null, (obj, res) => {
-
-            let stream = obj.replace_finish(res);
-
-            stream.write_bytes_async(contents, GLib.PRIORITY_DEFAULT,
-                                null, (w_obj, w_res) => {
-
-                w_obj.write_bytes_finish(w_res);
-                stream.close(null);
-            });
-        });
-    }
-
+    /**
+     * Read clipboard entries from the registry
+     *
+     * @returns {Promise<Array<ClipboardEntry>>}
+     */
     async read () {
-        return new Promise(resolve => {
-            if (GLib.file_test(this.REGISTRY_PATH, FileTest.EXISTS)) {
-                let file = Gio.file_new_for_path(this.REGISTRY_PATH);
-                let CACHE_FILE_SIZE = this.settings.get_int(PrefsFields.CACHE_FILE_SIZE);
+        if (!GLib.file_test(this.REGISTRY_FILEPATH, GLib.FileTest.EXISTS)) {
+            return [];
+        }
 
-                file.query_info_async('*', FileQueryInfoFlags.NONE,
-                                      GLib.PRIORITY_DEFAULT, null, (src, res) => {
-                    // Check if file size is larger than CACHE_FILE_SIZE
-                    // If so, make a backup of file, and resolve with empty array
-                    let file_info = src.query_info_finish(res);
+        // Check if file size is larger than CACHE_FILE_SIZE
+        // If so, make a backup of file, and resolve with empty array
+        const CACHE_FILE_SIZE = this.settings.get_int(PrefsFields.CACHE_FILE_SIZE);
+        const file = Gio.File.new_for_path(this.REGISTRY_FILEPATH);
+        const fileInfo = await file.query_info_async(
+            '*',
+            Gio.FileQueryInfoFlags.NONE,
+            GLib.PRIORITY_DEFAULT,
+            null,
+            (obj, res) => obj.query_info_finish(res),
+        );
+        if (fileInfo.get_size() >= CACHE_FILE_SIZE * 1024 * 1024) {
+            const dist = Gio.File.new_for_path(this.REGISTRY_FILEPATH_BACKUP);
+            file.move(dist, Gio.FileCopyFlags.OVERWRITE, null, null);
+            return [];
+        }
 
-                    if (file_info.get_size() >= CACHE_FILE_SIZE * 1024 * 1024) {
-                        let destination = Gio.file_new_for_path(this.BACKUP_REGISTRY_PATH);
+        // Read and parse registry entries
+        const registry = await file.load_contents_async(
+            null,
+            (obj, res) => {
+                const [ok, contents] = obj.load_contents_finish(res);
+                if (!ok) {
+                    console.error('Clipboard Indicator: failed to open registry file');
+                    return [];
+                }
 
-                        file.move(destination, FileCopyFlags.OVERWRITE, null, null);
-                        resolve([]);
-                        return;
-                    }
+                const text = new TextDecoder().decode(contents).trim();
+                if (!text.length) {
+                    return [];
+                }
 
-                    file.load_contents_async(null, (obj, res) => {
-                        let [success, contents] = obj.load_contents_finish(res);
+                return JSON.parse(text);
+            },
+        );
+        const entries = await Promise.all(registry.map(item => ClipboardEntry.fromRegistryItem(item)));
+        const result = entries.filter(Boolean);
 
-                        if (success) {
-                            let max_size = this.settings.get_int(PrefsFields.HISTORY_SIZE);
-                            const cacheTextData = new TextDecoder().decode(contents);
-                            let registry;
-                            if (cacheTextData.trim().length == 0) {
-                                registry = [];
-                            } else {
-                                registry = JSON.parse(cacheTextData);
-                            }
-                            const entriesPromises = registry.map(
-                                jsonEntry => {
-                                    return ClipboardEntry.fromJSON(jsonEntry)
-                                }
-                            );
+        // Limit to HISTORY_SIZE
+        const HISTORY_SIZE = this.settings.get_int(PrefsFields.HISTORY_SIZE);
+        let registryNoFavorite = result.filter(entry => !entry.isFavorite());
+        while (registryNoFavorite.length > HISTORY_SIZE) {
+            const idx = result.indexOf(registryNoFavorite.shift());
+            result.splice(idx, 1);
+            registryNoFavorite = result.filter(entry => !entry.isFavorite());
+        }
 
-                            Promise.all(entriesPromises).then(clipboardEntries => {
-                                clipboardEntries = clipboardEntries
-                                    .filter(entry => entry !== null);
-
-                                let registryNoFavorite = clipboardEntries
-                                    .filter(entry => !entry.isFavorite());
-
-                                while (registryNoFavorite.length > max_size) {
-                                    let oldestNoFavorite = registryNoFavorite.shift();
-                                    let itemIdx = clipboardEntries.indexOf(oldestNoFavorite);
-                                    clipboardEntries.splice(itemIdx,1);
-
-                                    registryNoFavorite = clipboardEntries.filter(
-                                        entry => !entry.isFavorite()
-                                    );
-                                }
-
-                                resolve(clipboardEntries);
-                            }).catch(e => {
-                                console.error(e);
-                            });
-                        }
-                        else {
-                            console.error('Clipboard Indicator: failed to open registry file');
-                        }
-                    });
-                });
-            }
-            else {
-                resolve([]);
-            }
-        });
+        return result;
     }
 
-    #entryFileExists (entry) {
-        const filename = this.getEntryFilename(entry);
-        return GLib.file_test(filename, FileTest.EXISTS);
+    /**
+     * Write clipboard entries to the registry
+     *
+     * @param {Array<ClipboardEntry>} entries
+     * @returns {Promise<void>}
+     */
+    async write (entries) {
+        // Make sure dir exists
+        const mode = parseInt('0775', 8);
+        GLib.mkdir_with_parents(this.REGISTRY_DIRPATH, mode);
+
+        // Write images to files
+        const images = entries.filter(entry => entry.isImage());
+        await Promise.all(images.map(entry => this.writeImageToFile(entry)));
+
+        // Write contents to registry file
+        const file = Gio.File.new_for_path(this.REGISTRY_FILEPATH);
+        const registry = entries.map(entry => entry.toRegistryItem(this.REGISTRY_DIRPATH));
+        const json = JSON.stringify(registry);
+        const contents = new GLib.Bytes(json);
+        const stream = await file.replace_async(
+            null,
+            false,
+            Gio.FileCreateFlags.NONE,
+            GLib.PRIORITY_DEFAULT,
+            null,
+            (obj, res) => obj.replace_finish(res),
+        );
+        const result = stream.write_bytes_async(
+            contents,
+            GLib.PRIORITY_DEFAULT,
+            null,
+            (obj, res) => {
+                obj.write_bytes_finish(res);
+                stream.close(null);
+            },
+        );
+
+        return result;
     }
 
+    /**
+     * Load image as St.Icon
+     *
+     * @param {ClipboardEntry} entry
+     * @returns {Promise<St.Icon>}
+     */
     async getEntryAsImage (entry) {
-        if (entry.isImage() === false) return;
-
-        if (this.#entryFileExists(entry) == false) {
-            await this.writeEntryFile(entry);
+        if (!entry.isImage()) {
+            return Promise.reject('Entry is not an image');
         }
 
-        const gicon = Gio.icon_new_for_string(this.getEntryFilename(entry));
-        const stIcon = new St.Icon({ gicon });
-        return stIcon;
+        const path = entry.getFilepath(this.REGISTRY_DIRPATH);
+        if (!GLib.file_test(path, GLib.FileTest.EXISTS)) {
+            await this.writeImageToFile(entry);
+        }
+
+        const gicon = Gio.icon_new_for_string(path);
+        const result = new St.Icon({ gicon });
+
+        return result;
     }
 
+    /**
+     * Load image as Clutter.Actor
+     *
+     * @param {ClipboardEntry} entry
+     * @returns {Promise<Clutter.Actor>}
+     */
     async getEntryAsTexture (entry) {
-        if (entry.isImage() === false) return null;
-
-        if (this.#entryFileExists(entry) === false) {
-            await this.writeEntryFile(entry);
+        if (!entry.isImage()) {
+            return Promise.reject('Entry is not an image');
         }
 
-        const file = Gio.file_new_for_path(this.getEntryFilename(entry));
+        const path = entry.getFilepath(this.REGISTRY_DIRPATH);
+        if (!GLib.file_test(path, GLib.FileTest.EXISTS)) {
+            await this.writeImageToFile(entry);
+        }
+
+        const file = Gio.File.new_for_path(path);
         const scaleFactor = St.ThemeContext.get_for_stage(global.stage).scale_factor;
-        return St.TextureCache.get_default().load_file_async(file, -1, -1, scaleFactor, 1.0);
+        const result = St.TextureCache.get_default().load_file_async(file, -1, -1, scaleFactor, 1.0);
+
+        return result;
     }
 
-    getEntryFilename (entry) {
-        return `${this.REGISTRY_DIR}/${entry.asBytes().hash()}`;
-    }
+    /**
+     * Write an image entry to file
+     *
+     * @param {ClipboardEntry} entry
+     * @returns {Promise<void>}
+     */
+    async writeImageToFile (entry) {
+        if (!entry.isImage()) {
+            return Promise.reject('Entry is not an image');
+        }
 
-    async writeEntryFile (entry) {
-        if (this.#entryFileExists(entry)) return;
+        const path = entry.getFilepath(this.REGISTRY_DIRPATH);
+        if (GLib.file_test(path, GLib.FileTest.EXISTS)) {
+            return;
+        }
 
-        let file = Gio.file_new_for_path(this.getEntryFilename(entry));
+        const file = Gio.File.new_for_path(path);
+        const contents = entry.asBytes();
+        const stream = await file.replace_async(
+            null,
+            false,
+            Gio.FileCreateFlags.NONE,
+            GLib.PRIORITY_DEFAULT,
+            null,
+            (obj, res) => obj.replace_finish(res),
+        );
+        const result = stream.write_bytes_async(
+            contents,
+            GLib.PRIORITY_DEFAULT,
+            null,
+            (obj, res) => {
+                obj.write_bytes_finish(res);
+                stream.close(null);
+            },
+        );
 
-        return new Promise(resolve => {
-            file.replace_async(null, false, Gio.FileCreateFlags.NONE,
-                               GLib.PRIORITY_DEFAULT, null, (obj, res) => {
-
-                let stream = obj.replace_finish(res);
-
-                stream.write_bytes_async(entry.asBytes(), GLib.PRIORITY_DEFAULT,
-                                         null, (w_obj, w_res) => {
-
-                    w_obj.write_bytes_finish(w_res);
-                    stream.close(null);
-                    resolve();
-                });
-            });
-        });
+        return result;
     }
 
     async deleteEntryFile (entry) {
-        const file = Gio.file_new_for_path(this.getEntryFilename(entry));
+        const path = entry.getFilepath(this.REGISTRY_DIRPATH);
+        const file = Gio.File.new_for_path(path);
 
         try {
             await file.delete_async(GLib.PRIORITY_DEFAULT, null);
@@ -205,10 +211,10 @@ export class Registry {
     }
 
     clearCacheFolder() {
-
         const CANCELLABLE = null;
+
         try {
-            const folder = Gio.file_new_for_path(this.REGISTRY_DIR);
+            const folder = Gio.File.new_for_path(this.REGISTRY_DIRPATH);
             const enumerator = folder.enumerate_children("", 1, CANCELLABLE);
 
             let file;
@@ -228,61 +234,76 @@ export class ClipboardEntry {
     #bytes;
     #favorite;
 
-    static #decode (contents) {
-        return Uint8Array.from(contents.match(/.{1,2}/g).map((byte) => parseInt(byte, 16)));
-    }
-
+    /**
+     * Check if the mimetype is a text entry
+     *
+     * @param {string} mimetype
+     * @returns {boolean}
+     */
     static __isText (mimetype) {
-        return mimetype.startsWith('text/') ||
-            mimetype === 'STRING' ||
-            mimetype === 'UTF8_STRING';
+        return false
+            || mimetype.startsWith('text/')
+            || mimetype === 'STRING'
+            || mimetype === 'UTF8_STRING';
     }
 
-    static async fromJSON (jsonEntry) {
-        const mimetype = jsonEntry.mimetype || 'text/plain;charset=utf-8';
-        const favorite = jsonEntry.favorite;
-        let bytes;
-
+    /**
+     * Load the contents of an entry based on its mimetype
+     *
+     * @param {string} contents
+     * @param {string} mimetype
+     * @returns {Promise<Uint8Array<ArrayBuffer> | null>}
+     */
+    static async __loadContents (contents, mimetype) {
         if (ClipboardEntry.__isText(mimetype)) {
-            bytes = new TextEncoder().encode(jsonEntry.contents);
+            return new TextEncoder().encode(contents);
         }
-        else {
-            const filename = jsonEntry.contents;
-            if (!GLib.file_test(filename, FileTest.EXISTS)) return null;
 
-            let file = Gio.file_new_for_path(filename);
+        const path = contents;
+        if (!GLib.file_test(path, GLib.FileTest.EXISTS)) {
+            return null;
+        }
 
-            const contentType = await file.query_info_async('*', FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, null, (obj, res) => {
-                try {
-                    const fileInfo = obj.query_info_finish(res);
-                    return fileInfo.get_content_type();
-                } catch (e) {
-                    console.error(e);
+        const file = Gio.File.new_for_path(path);
+        const result = file.load_contents_async(
+            null,
+            (obj, res) => {
+                const [ok, contents] = obj.load_contents_finish(res);
+                if (!ok) {
+                    console.error('Clipboard Indicator: failed to read image file from cache');
+                    return null;
                 }
-            });
 
-            if (contentType && !contentType.startsWith('image/') && !contentType.startsWith('text/')) {
-                bytes = new TextEncoder().encode(jsonEntry.contents);
-            }
-            else {
-                bytes = await new Promise((resolve, reject) => file.load_contents_async(null, (obj, res) => {
-                    let [success, contents] = obj.load_contents_finish(res);
+                return contents;
+            },
+        );
 
-                    if (success) {
-                        resolve(contents);
-                    }
-                    else {
-                        reject(
-                            new Error('Clipboard Indicator: could not read image file from cache')
-                        );
-                    }
-                }));
-            }
+        return result;
+    }
+
+    /**
+     * Create an instance from a registry item
+     *
+     * @param {Record<string, any>} item
+     * @returns {Promise<ClipboardEntry | null>}
+     */
+    static async fromRegistryItem (item) {
+        const contents = item.contents;
+        const favorite = item.favorite;
+        const mimetype = item.mimetype || 'text/plain;charset=utf-8';
+        const tag = item.tag;
+
+        const bytes = await ClipboardEntry.__loadContents(contents, mimetype);
+        if (!bytes) {
+            return null;
         }
 
-        const entry = new ClipboardEntry(mimetype, bytes, favorite);
-        if (jsonEntry.tag) entry.setTag(jsonEntry.tag);
-        return entry;
+        const result = new ClipboardEntry(mimetype, bytes, favorite);
+        if (tag) {
+            result.setTag(tag);
+        }
+
+        return result;
     }
 
     constructor (mimetype, bytes, favorite) {
@@ -292,19 +313,20 @@ export class ClipboardEntry {
     }
 
     #encode () {
-        if (this.isText()) {
-            return this.getStringValue();
+        if (this.isImage()) {
+            return [...this.#bytes]
+                .map(x => x.toString(16).padStart(2, '0'))
+                .join('');
         }
 
-        return [...this.#bytes]
-            .map(x => x.toString(16).padStart(2, '0'))
-            .join('');
+        return this.getStringValue();
     }
 
     getStringValue () {
         if (this.isImage()) {
             return `[Image ${this.asBytes().hash()}]`;
         }
+
         return new TextDecoder().decode(this.#bytes);
     }
 
@@ -329,7 +351,10 @@ export class ClipboardEntry {
     }
 
     setText (text) {
-        if (!this.isText()) return;
+        if (this.isImage()) {
+            return;
+        }
+
         this.#bytes = new TextEncoder().encode(text);
     }
 
@@ -350,5 +375,35 @@ export class ClipboardEntry {
     equals (otherEntry) {
         return this.getStringValue() === otherEntry.getStringValue();
         // this.asBytes().equal(otherEntry.asBytes());
+    }
+
+    /**
+     * Get the filepath
+     *
+     * @param {string} registryDirpath
+     * @returns {string}
+     */
+    getFilepath (registryDirpath) {
+        return registryDirpath + '/' + this.asBytes().hash();
+    }
+
+    /**
+     * Convert entry to registry item
+     *
+     * @param {string} registryDirpath
+     * @returns {Record<string, any>}
+     */
+    toRegistryItem (registryDirpath) {
+        const contents = this.isImage()
+            ? this.getFilepath(registryDirpath)
+            : this.getStringValue();
+        const tag = this.#tag;
+
+        return {
+            contents,
+            favorite: this.#favorite,
+            mimetype: this.#mimetype,
+            ...(tag ? { tag } : {}),
+        }
     }
 }
