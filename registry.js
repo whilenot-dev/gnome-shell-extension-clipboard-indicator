@@ -41,23 +41,11 @@ export class Registry {
         }
 
         // Read and parse registry entries
-        const registry = await file.load_contents_async(
-            null,
-            (obj, res) => {
-                const [ok, contents] = obj.load_contents_finish(res);
-                if (!ok) {
-                    console.error('Clipboard Indicator: failed to open registry file');
-                    return [];
-                }
-
-                const text = new TextDecoder().decode(contents).trim();
-                if (!text.length) {
-                    return [];
-                }
-
-                return JSON.parse(text);
-            },
-        );
+        const contents = await readContentsFromFile(this.REGISTRY_FILEPATH);
+        const text = new TextDecoder().decode(contents || undefined).trim();
+        const registry = text.length
+            ? JSON.parse(text)
+            : [];
         const entries = await Promise.all(registry.map(item => ClipboardEntry.fromRegistryItem(item)));
         const result = entries.filter(Boolean);
 
@@ -230,19 +218,7 @@ export class ClipboardEntry {
             return null;
         }
 
-        const file = Gio.File.new_for_path(path);
-        const result = file.load_contents_async(
-            null,
-            (obj, res) => {
-                const [ok, contents] = obj.load_contents_finish(res);
-                if (!ok) {
-                    console.error('Clipboard Indicator: failed to read image file from cache');
-                    return null;
-                }
-
-                return contents;
-            },
-        );
+        const result = readContentsFromFile(path);
 
         return result;
     }
@@ -384,6 +360,30 @@ export class ClipboardEntry {
 
         return new ClipboardEntry(this.#mimetype, bytes, this.#favorite);
     }
+}
+
+/**
+ * Read contents from a file
+ *
+ * @param {string} path
+ * @returns {Promise<GLib.Bytes | null>}
+ */
+async function readContentsFromFile(path) {
+    const file = Gio.File.new_for_path(path);
+    const result = file.load_contents_async(
+        null,
+        (obj, res) => {
+            const [ok, contents] = obj.load_contents_finish(res);
+            if (!ok) {
+                console.error(`Clipboard Indicator: failed to read file at ${path}`);
+                return null;
+            }
+
+            return contents;
+        },
+    );
+
+    return result;
 }
 
 /**
