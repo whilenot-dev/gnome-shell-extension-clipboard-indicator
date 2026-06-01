@@ -89,27 +89,10 @@ export class Registry {
         await Promise.all(images.map(entry => this.writeImageToFile(entry)));
 
         // Write contents to registry file
-        const file = Gio.File.new_for_path(this.REGISTRY_FILEPATH);
         const registry = entries.map(entry => entry.toRegistryItem(this.REGISTRY_DIRPATH));
         const json = JSON.stringify(registry);
         const contents = new GLib.Bytes(json);
-        const stream = await file.replace_async(
-            null,
-            false,
-            Gio.FileCreateFlags.NONE,
-            GLib.PRIORITY_DEFAULT,
-            null,
-            (obj, res) => obj.replace_finish(res),
-        );
-        const result = stream.write_bytes_async(
-            contents,
-            GLib.PRIORITY_DEFAULT,
-            null,
-            (obj, res) => {
-                obj.write_bytes_finish(res);
-                stream.close(null);
-            },
-        );
+        const result = writeContentsToFile(this.REGISTRY_FILEPATH, contents);
 
         return result;
     }
@@ -175,25 +158,8 @@ export class Registry {
             return;
         }
 
-        const file = Gio.File.new_for_path(path);
         const contents = entry.asBytes();
-        const stream = await file.replace_async(
-            null,
-            false,
-            Gio.FileCreateFlags.NONE,
-            GLib.PRIORITY_DEFAULT,
-            null,
-            (obj, res) => obj.replace_finish(res),
-        );
-        const result = stream.write_bytes_async(
-            contents,
-            GLib.PRIORITY_DEFAULT,
-            null,
-            (obj, res) => {
-                obj.write_bytes_finish(res);
-                stream.close(null);
-            },
-        );
+        const result = writeContentsToFile(path, contents);
 
         return result;
     }
@@ -418,4 +384,34 @@ export class ClipboardEntry {
 
         return new ClipboardEntry(this.#mimetype, bytes, this.#favorite);
     }
+}
+
+/**
+ * Write contents to a file
+ *
+ * @param {string} path
+ * @param {GLib.Bytes} contents
+ * @returns {Promise<void>}
+ */
+async function writeContentsToFile(path, contents) {
+    const file = Gio.File.new_for_path(path);
+    const stream = await file.replace_async(
+        null,
+        false,
+        Gio.FileCreateFlags.NONE,
+        GLib.PRIORITY_DEFAULT,
+        null,
+        (obj, res) => obj.replace_finish(res),
+    );
+    const result = stream.write_bytes_async(
+        contents,
+        GLib.PRIORITY_DEFAULT,
+        null,
+        (obj, res) => {
+            obj.write_bytes_finish(res);
+            stream.close(null);
+        },
+    );
+
+    return result;
 }
